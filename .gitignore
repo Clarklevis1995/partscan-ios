@@ -1,0 +1,12 @@
+.DS_Store
+Build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.idea/
+
+server/node_modules/
+server/dist/
+server/.env
+server/storage/
+server/coverage/
