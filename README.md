@@ -32,21 +32,23 @@ PartScan 尝试把这件事交给视觉大模型：用户使用 iPhone 连续扫
   <tr>
     <td align="center"><img src="docs/screenshots/home.png" width="250" alt="PartScan 首页" /></td>
     <td align="center"><img src="docs/screenshots/create-product.png" width="250" alt="创建模型产品" /></td>
-    <td align="center"><img src="docs/screenshots/parts-list.png" width="250" alt="结构化取件表" /></td>
+    <td align="center"><img src="docs/screenshots/scan-manual.png" width="250" alt="扫描模型说明书" /></td>
   </tr>
   <tr>
     <td align="center"><b>模型归档</b><br/>查看已经生成的取件表</td>
     <td align="center"><b>录入说明书</b><br/>创建产品、选择封面并开始扫描</td>
-    <td align="center"><b>结构化清单</b><br/>按部位、板件和零件编号展示</td>
+    <td align="center"><b>连续扫描</b><br/>对准页面，逐页记录整本说明书</td>
   </tr>
 </table>
 
 <table>
   <tr>
+    <td align="center"><img src="docs/screenshots/parts-list.png" width="250" alt="结构化取件表" /></td>
     <td align="center"><img src="docs/screenshots/edit-part.png" width="250" alt="编辑零件" /></td>
     <td align="center"><img src="docs/screenshots/settings.png" width="250" alt="识别偏好设置" /></td>
   </tr>
   <tr>
+    <td align="center"><b>结构化清单</b><br/>按部位、板件和零件编号展示</td>
     <td align="center"><b>人工校正</b><br/>长按零件修改编号、说明和数量</td>
     <td align="center"><b>识别偏好</b><br/>切换模型、OCR、批大小与多尺度切片</td>
   </tr>
