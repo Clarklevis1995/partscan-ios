@@ -1,5 +1,4 @@
 import { definitionValue, parseListPage } from './bandai-manuals.service';
-import { inferSplitColumns } from './pdf-renderer';
 
 describe('BandaiManualsService helpers', () => {
   it('parses product identity, names, date, detail URL, and cover URL', () => {
@@ -39,11 +38,6 @@ describe('BandaiManualsService helpers', () => {
     const manual = parseListPage(html)[0];
     expect(`${manual.title} ${manual.titleEn}`).toContain('ガンダムレオパルド');
     expect(`${manual.title} ${manual.titleEn}`).toContain('GUNDAM LEOPARD');
-  });
-
-  it('infers logical-page columns from imposed PDF dimensions', () => {
-    expect(inferSplitColumns(1542.86, 443.11)).toBe(5);
-    expect(inferSplitColumns(1440, 510.24)).toBe(4);
   });
 
   it('parses detail definitions whose terms contain inline SVG markup', () => {

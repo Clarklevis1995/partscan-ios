@@ -43,20 +43,6 @@ export class ImportBandaiManualsDto {
   delayMs = 1500;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(72)
-  @Max(600)
-  jpgDpi = 200;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(8)
-  splitColumns = 0;
-
-  @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   overwrite = false;

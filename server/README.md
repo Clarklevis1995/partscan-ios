@@ -232,13 +232,11 @@ curl -X POST http://127.0.0.1:3000/v1/bandai-manuals/import \
     "endPage": 1,
     "limit": 1,
     "delayMs": 1500,
-    "jpgDpi": 200,
-    "splitColumns": 0,
     "overwrite": false
   }'
 ```
 
-`splitColumns: 0` 根据 PDF 印刷面的长宽比自动识别横向拼版列数；传入 `5` 可强制每个印刷面切成 5 页，传入 `1` 只转换格式、不横向切割。接口当前为同步测试接口，批量较大时请求会持续较长时间，建议先用 `limit: 1` 验证。
+接口当前为同步测试接口，批量较大时请求会持续较长时间，建议先用 `limit: 1` 验证。
 
 `query` 同时支持日文名、英文名、品番和 JAN 编码。例如下面两个搜索词都可以找到 Gundam Leopard：
 
@@ -252,8 +250,6 @@ curl -X POST http://127.0.0.1:3000/v1/bandai-manuals/import \
 
 旧字段 `freeword` 仍然可用；如果两个字段同时传入，优先使用 `query`。
 
-PDF 解析、渲染和裁切由随服务安装的 `pdfjs-dist`、`@napi-rs/canvas` 和 `sharp` 完成，不依赖宿主机的 Poppler、ImageMagick 或 Homebrew。服务要求 Node.js `>=22.13`；执行 `npm ci` 或构建仓库中的 Dockerfile 即会安装所需运行时和当前平台的原生二进制包。
-
 归档结构：
 
 ```text
@@ -261,7 +257,5 @@ storage/bandai-manuals/<说明书ID_品番_产品名称>/
 ├── cover.jpg
 ├── manual.pdf
 ├── product-name.txt
-├── product.json
-├── sheets/sheet-1.jpg
-└── pages/page-001.jpg
+└── product.json
 ```

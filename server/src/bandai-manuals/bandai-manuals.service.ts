@@ -1,11 +1,10 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createWriteStream } from 'node:fs';
-import { mkdir, open, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, open, rename, stat, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { ImportBandaiManualsDto } from './dto/import-bandai-manuals.dto';
-import { inferSplitColumns, renderAndCutPdf } from './pdf-renderer';
 
 const BASE_URL = 'https://manual.bandai-hobby.net/';
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/150.0 Safari/537.36 PartScanBandaiManualDownloader/1.0';
@@ -24,11 +23,6 @@ export interface BandaiManual {
   productDir: string;
   coverFile: string;
   pdfFile: string;
-  sheetsDir: string;
-  pagesDir: string;
-  sheetCount: number;
-  pageCount: number;
-  splitColumns: number;
   status: 'discovered' | 'downloaded' | 'exists' | 'failed';
   error: string;
 }
@@ -47,7 +41,7 @@ export class BandaiManualsService {
     if (options.endPage < options.startPage) throw new BadRequestException('endPage must be greater than or equal to startPage');
     const startedAt = Date.now();
     const query = options.query.trim() || options.freeword.trim();
-    this.logger.log(`Import started query=${JSON.stringify(query)} pages=${options.startPage}-${options.endPage} limit=${options.limit} dpi=${options.jpgDpi} splitColumns=${options.splitColumns || 'auto'} overwrite=${options.overwrite}`);
+    this.logger.log(`Import started query=${JSON.stringify(query)} pages=${options.startPage}-${options.endPage} limit=${options.limit} overwrite=${options.overwrite}`);
     await mkdir(this.root, { recursive: true });
     const manuals = await this.discover(options);
     this.logger.log(`Discovery completed products=${manuals.length}`);
@@ -60,18 +54,12 @@ export class BandaiManualsService {
         this.applyDetails(manual, detailHtml);
         const productDir = join(this.root, this.productDirectoryName(manual));
         manual.productDir = productDir;
-        manual.sheetsDir = join(productDir, 'sheets');
-        manual.pagesDir = join(productDir, 'pages');
         await mkdir(productDir, { recursive: true });
 
         manual.coverFile = await this.downloadCover(manual, options);
         manual.pdfFile = await this.downloadPdf(manual, options);
-        const rendered = await this.renderAndCut(manual.pdfFile, manual, options);
-        manual.sheetCount = rendered.sheetCount;
-        manual.pageCount = rendered.pageCount;
-        manual.splitColumns = rendered.columns;
-        manual.status = rendered.existed ? 'exists' : 'downloaded';
-        this.logger.log(`Product processing completed manualId=${manual.manualId} status=${manual.status} sheets=${manual.sheetCount} pages=${manual.pageCount} durationMs=${Date.now() - manualStartedAt}`);
+        manual.status = 'downloaded';
+        this.logger.log(`Product processing completed manualId=${manual.manualId} status=${manual.status} durationMs=${Date.now() - manualStartedAt}`);
       } catch (error) {
         manual.status = 'failed';
         manual.error = error instanceof Error ? error.message : String(error);
@@ -158,25 +146,6 @@ export class BandaiManualsService {
     return destination;
   }
 
-  private async renderAndCut(pdfPath: string, manual: BandaiManual, options: ImportBandaiManualsDto) {
-    await mkdir(manual.sheetsDir, { recursive: true });
-    await mkdir(manual.pagesDir, { recursive: true });
-    await this.clearJpegs(manual.sheetsDir);
-    await this.clearJpegs(manual.pagesDir);
-    this.logger.log(`PDF render and split started manualId=${manual.manualId}`);
-    return {
-      ...(await renderAndCutPdf(
-        pdfPath,
-        manual.sheetsDir,
-        manual.pagesDir,
-        options.jpgDpi,
-        options.splitColumns,
-        (message) => this.logger.log(`manualId=${manual.manualId} ${message}`),
-      )),
-      existed: false,
-    };
-  }
-
   private async fetchText(url: string, delayMs: number): Promise<string> {
     const response = await this.fetchResponse(url, delayMs, { Accept: 'text/html', 'Accept-Language': 'ja,en;q=0.8' });
     return response.text();
@@ -216,11 +185,6 @@ export class BandaiManualsService {
     await pipeline(response.body as never, createWriteStream(path, { flags: append ? 'a' : 'w' }));
   }
 
-  private async clearJpegs(directory: string): Promise<void> {
-    const { readdir } = await import('node:fs/promises');
-    for (const name of await readdir(directory)) if (name.endsWith('.jpg')) await unlink(join(directory, name));
-  }
-
   private async writeProductInfo(manual: BandaiManual): Promise<void> {
     if (!manual.productDir) return;
     await mkdir(manual.productDir, { recursive: true });
@@ -252,8 +216,7 @@ export function parseListPage(html: string): BandaiManual[] {
     manuals.set(manualId, {
       manualId, title, titleEn, productNumber: '', releaseDate: definitionValue(body, '発売日'), brand: '', work: '',
       detailUrl: new URL(match[1], BASE_URL).toString(), pdfUrl: '', coverUrl: new URL(cover, BASE_URL).toString(),
-      productDir: '', coverFile: '', pdfFile: '', sheetsDir: '', pagesDir: '', sheetCount: 0, pageCount: 0,
-      splitColumns: 0, status: 'discovered', error: '',
+      productDir: '', coverFile: '', pdfFile: '', status: 'discovered', error: '',
     });
   }
   return [...manuals.values()];
