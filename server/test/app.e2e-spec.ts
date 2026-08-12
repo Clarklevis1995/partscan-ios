@@ -51,6 +51,18 @@ describe('PartScan API (e2e)', () => {
     });
   });
 
+  it('validates the Bandai manual import request before accessing the remote site', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/bandai-manuals/import')
+      .send({ startPage: 3, endPage: 2 })
+      .expect(400)
+      .expect(({ body }) => expect(body.message).toContain('endPage'));
+    await request(app.getHttpServer())
+      .post('/v1/bandai-manuals/import')
+      .send({ limit: 0 })
+      .expect(400);
+  });
+
   it('creates a product, uploads pages, analyzes, retains pages, and allows manual deletion', async () => {
     const created = await request(app.getHttpServer()).post('/v1/products').field('name', '测试模型').expect(201);
     expect(created.body).toMatchObject({

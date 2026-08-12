@@ -178,6 +178,69 @@ macOS 查看当前 Wi-Fi IP：
 ipconfig getifaddr en0
 ```
 
+## 批量归档万代官方说明书
+
+仓库提供了一个仅使用 Python 标准库的下载脚本。它从万代官方列表页发现产品，读取详情元数据，并按产品下载官方封面与 PDF，同时生成 `manifest.csv` 和 `manifest.json`：
+
+```bash
+# 先小批量验证：第 1 页前 3 个产品
+python3 tools/bandai_manual_downloader.py --limit 3
+
+# 搜索指定产品
+python3 tools/bandai_manual_downloader.py --freeword 'ガンダムレオパルド' --end-page 3
+
+# 扫描前 20 页，但只采集元数据
+python3 tools/bandai_manual_downloader.py --end-page 20 --metadata-only
+
+# 批量下载前 20 页，至少间隔 2 秒发起请求
+python3 tools/bandai_manual_downloader.py --end-page 20 --delay 2 --output ./bandai-manuals
+```
+
+每个产品会生成独立目录：
+
+```text
+bandai-manuals/
+├── manifest.csv
+├── manifest.json
+└── 5281_2805110_HG 1_144 ガンダムレオパルド/
+    ├── cover.jpg
+    ├── manual.pdf
+    ├── sheets/
+    │   ├── sheet-001.jpg
+    │   └── sheet-002.jpg
+    ├── pages/
+    │   ├── page-001.jpg
+    │   ├── ...
+    │   └── page-010.jpg
+    ├── product-name.txt
+    └── product.json
+```
+
+脚本会先使用 Poppler 把 PDF 的印刷面渲染到 `sheets/`，再识别每个印刷面横向拼版的列数，将其裁成 `pages/` 中的独立逻辑页。例如一个包含 2 个印刷面、每面横排 5 页的 PDF，会得到 10 张 JPG。默认分辨率为 200 DPI。
+
+```bash
+# 自动识别横向拼版列数并切割
+python3 tools/bandai_manual_downloader.py --limit 3
+
+# 明确指定每个 PDF 印刷面包含 5 个逻辑页
+python3 tools/bandai_manual_downloader.py --limit 3 --split-columns 5
+
+# 提高小字清晰度
+python3 tools/bandai_manual_downloader.py --limit 3 --jpg-dpi 300
+
+# 只按 PDF 自身页码转换，不进一步横向切割
+python3 tools/bandai_manual_downloader.py --limit 3 --split-columns 1
+
+# 不联网，直接批量切割已经下载到 bandai-manuals/ 的 PDF
+python3 tools/bandai_manual_downloader.py --render-existing --output ./bandai-manuals
+```
+
+可用 `--no-render-pages` 完全跳过 JPG 生成。PDF 渲染和裁切只依赖 Poppler；macOS 可执行 `brew install poppler` 安装，不需要额外的 Python 图像包。
+
+脚本默认只处理第 1 页，并以单请求、至少 1.5 秒间隔运行。PDF 下载中断后会保留 `.part` 文件并在下次运行时尝试 HTTP Range 续传；已存在的封面、PDF 和完整 JPG 页面默认跳过。失败项会记录在清单中，脚本退出码为 `1`。
+
+官网明确提示并非所有说明书都会展示，且页面内容受版权保护。请仅在官网条款允许的范围内用于个人归档，不要移除版权信息、再分发文件或提高请求频率；若官网更新条款、robots 规则或出现 `429/403`，应停止任务并按其要求调整。
+
 ## 服务端配置
 
 所有密钥只放在 `server/.env`。该文件已经被 Git 忽略，**不要把真实 Key 写入 iOS 客户端或提交到仓库**。
