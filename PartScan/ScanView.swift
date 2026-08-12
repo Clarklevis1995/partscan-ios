@@ -1,5 +1,18 @@
 import SwiftUI
 
+private enum ManualCaptureStage: Equatable {
+    case plateCatalog, assemblySteps
+
+    var hint: ManualPageCaptureHint { self == .plateCatalog ? .plateCatalog : .assemblySteps }
+    var title: String { self == .plateCatalog ? "板件图" : "拼装流程" }
+    var step: String { self == .plateCatalog ? "步骤 1/2" : "步骤 2/2" }
+    var instruction: String {
+        self == .plateCatalog
+            ? "先拍板件总览，让模型建立板件与零件编号字典"
+            : "再拍具体拼装步骤，模型会按部位生成取件表"
+    }
+}
+
 struct ScanView: View {
     @EnvironmentObject private var store: PartsStore
     @StateObject private var scanner = CameraScanner()
@@ -8,6 +21,10 @@ struct ScanView: View {
     @State private var currentPageReady = false
     @State private var isCapturing = false
     @State private var activeRecordingProductID: UUID?
+    @State private var captureStage: ManualCaptureStage = .plateCatalog
+    @State private var capturingStage: ManualCaptureStage?
+    @State private var platePageCount = 0
+    @State private var assemblyPageCount = 0
 
     var body: some View {
         Group {
@@ -35,8 +52,8 @@ struct ScanView: View {
                     VStack(spacing: 0) {
                         scannerHeader
                         scanStatusPill
-                            .padding(.top, 24)
-                            .padding(.horizontal, 30)
+                            .padding(.top, 14)
+                            .padding(.horizontal, 74)
                         Spacer()
                     }
                     .padding(.top, 12)
@@ -48,6 +65,12 @@ struct ScanView: View {
                 .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 16)
                 GlassCard(inset: 11) {
                     VStack(spacing: 8) {
+                        HStack(spacing: 8) {
+                            Text(captureStage.step).font(.caption.weight(.bold))
+                            Text(captureStage.title).font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text("板件 \(platePageCount) · 拼装 \(assemblyPageCount)").font(.caption).foregroundStyle(.secondary)
+                        }
                         HStack {
                             Label("已记录 \(capturedPages) 页", systemImage: "doc.text.fill").font(.subheadline.weight(.semibold))
                             Spacer()
@@ -60,8 +83,18 @@ struct ScanView: View {
                         }
                         .buttonStyle(.bordered)
                         .disabled(isCapturing)
-                        Button { finish() } label: { Text("结束识别").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 9) }
+                        if captureStage == .plateCatalog {
+                            Button { switchToAssemblySteps() } label: {
+                                Text(platePageCount > 0 ? "板件图拍完了，开始拍拼装流程" : "没有板件图，直接拍拼装流程")
+                                    .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 9)
+                            }
                             .buttonStyle(.borderedProminent).tint(PremiumPalette.champagne).foregroundStyle(.black).clipShape(Capsule())
+                            .disabled(isCapturing)
+                        } else {
+                            Button { finish() } label: { Text("结束识别").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 9) }
+                                .buttonStyle(.borderedProminent).tint(PremiumPalette.champagne).foregroundStyle(.black).clipShape(Capsule())
+                                .disabled(isCapturing || assemblyPageCount == 0)
+                        }
                     }
                 }.padding(.horizontal).padding(.bottom, 8)
             }
@@ -83,10 +116,13 @@ struct ScanView: View {
             isCapturing = false
             currentPageReady = true
             capturedPages += 1
+            if capturingStage == .plateCatalog { platePageCount += 1 } else { assemblyPageCount += 1 }
+            capturingStage = nil
         }
         .onReceive(NotificationCenter.default.publisher(for: .partScanPageCaptureFailed)) { notification in
             guard let page = notification.object as? Int, page == currentPage else { return }
             isCapturing = false
+            capturingStage = nil
             scanner.recognizedText = "保存失败，请重新扫描当前页"
         }
     }
@@ -94,18 +130,22 @@ struct ScanView: View {
     private func capturePage() {
         guard !isCapturing, !currentPageReady else { return }
         isCapturing = true
-        scanner.captureCurrentPage(page: currentPage)
+        capturingStage = captureStage
+        scanner.captureCurrentPage(page: currentPage, captureHint: captureStage.hint)
     }
 
     private var scanStatusPill: some View {
-        VStack(spacing: 7) {
-            Text(currentPageReady ? "第 \(currentPage) 页已录入，请翻页后点击下一页" : isCapturing ? "正在录入第 \(currentPage) 页，请保持画面稳定" : "对准第 \(currentPage) 页后，点击扫描当前页")
-                .font(.subheadline.weight(.semibold))
-            Text(scanner.recognizedText).lineLimit(1).font(.caption).opacity(0.76)
+        HStack(spacing: 7) {
+            Image(systemName: currentPageReady ? "checkmark.circle.fill" : isCapturing ? "camera.aperture" : "viewfinder")
+                .foregroundStyle(PremiumPalette.champagne)
+            Text("\(captureStage.step) · \(captureStage.title)").font(.caption.weight(.bold))
+            Text("·").opacity(0.45)
+            Text(currentPageReady ? "请翻页" : isCapturing ? "保持稳定" : "第 \(currentPage) 页")
+                .font(.caption.weight(.semibold))
         }
         .foregroundStyle(.white)
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 18).padding(.vertical, 13)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 13).padding(.vertical, 8)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().stroke(.white.opacity(0.20), lineWidth: 0.8))
         .shadow(color: .black.opacity(0.22), radius: 10, y: 5)
@@ -139,6 +179,18 @@ struct ScanView: View {
         capturePage()
     }
 
+    private func switchToAssemblySteps() {
+        guard !isCapturing else { return }
+        if currentPageReady {
+            currentPage += 1
+            currentPageReady = false
+        }
+        captureStage = .assemblySteps
+        scanner.clearRecognizedCandidates()
+        scanner.recognizedText = "请对准第一张拼装流程图"
+        partScanLog("[采集] 进入拼装流程阶段，板件参考页=\(platePageCount)")
+    }
+
     private func finish() {
         partScanLog("[交互] 用户点击结束识别，已录入 \(capturedPages) 页")
         activeRecordingProductID = nil
@@ -161,6 +213,10 @@ struct ScanView: View {
         guard let productID = store.pendingProduct?.id, productID != activeRecordingProductID else { return }
         activeRecordingProductID = productID
         capturedPages = 0
+        platePageCount = 0
+        assemblyPageCount = 0
+        captureStage = .plateCatalog
+        capturingStage = nil
         currentPage = 1
         currentPageReady = false
         isCapturing = false

@@ -23,6 +23,7 @@ final class CameraScanner: NSObject, ObservableObject, @unchecked Sendable {
     private var latestCandidates: [OCRHint] = []
     private var pendingCapturePage: Int?
     private var pendingCaptureCandidates: [OCRHint] = []
+    private var pendingCaptureHint: ManualPageCaptureHint = .assemblySteps
 
     func start() {
         print("[PartScan] 请求启动相机")
@@ -48,7 +49,7 @@ final class CameraScanner: NSObject, ObservableObject, @unchecked Sendable {
 
     /// Takes one deliberate, user-confirmed capture. OCR candidates are stamped with
     /// the same manual page number before they ever leave the device.
-    func captureCurrentPage(page: Int) {
+    func captureCurrentPage(page: Int, captureHint: ManualPageCaptureHint) {
         partScanLog("[采集] 请求保存第 \(page) 页")
         queue.async { [weak self] in
             guard let self, self.session.isRunning else { return }
@@ -58,6 +59,7 @@ final class CameraScanner: NSObject, ObservableObject, @unchecked Sendable {
             }
             self.pendingCapturePage = page
             self.pendingCaptureCandidates = candidates
+            self.pendingCaptureHint = captureHint
             self.candidateLock.unlock()
             let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
             self.photoOutput.capturePhoto(with: settings, delegate: self)
@@ -161,6 +163,7 @@ extension CameraScanner: AVCapturePhotoCaptureDelegate {
         candidateLock.lock()
         let capturedPage = pendingCapturePage
         let candidates = pendingCaptureCandidates
+        let captureHint = pendingCaptureHint
         pendingCapturePage = nil
         pendingCaptureCandidates = []
         candidateLock.unlock()
@@ -176,7 +179,7 @@ extension CameraScanner: AVCapturePhotoCaptureDelegate {
             let startedAt = Date()
             partScanLog("[图片] 第 \(capturedPage) 页开始：解码、文档检测、透视矫正、增强、JPEG 编码")
             let processed = DocumentImageProcessor.shared.process(data)
-            ManualImageCache.shared.storeJPEG(processed.data, candidates: candidates)
+            ManualImageCache.shared.storeJPEG(processed.data, candidates: candidates, captureHint: captureHint)
             partScanLog("[图片] 第 \(capturedPage) 页处理完成：透视矫正=\(processed.perspectiveCorrected)，增强=\(processed.enhanced)，尺寸=\(processed.pixelWidth)x\(processed.pixelHeight)，输出 \(processed.data.count / 1_024) KB，耗时 \(partScanMilliseconds(since: startedAt))")
             DispatchQueue.main.async { NotificationCenter.default.post(name: .partScanPageCaptured, object: capturedPage) }
         }

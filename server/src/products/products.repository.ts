@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { PartsList, ProductRecord } from '../domain';
+import { ManualPageCaptureHint, PartsList, ProductRecord } from '../domain';
 
 @Injectable()
 export class ProductsRepository {
@@ -8,7 +8,7 @@ export class ProductsRepository {
 
   create(name: string, coverPath?: string): ProductRecord {
     const now = new Date().toISOString();
-    const product: ProductRecord = { id: randomUUID(), name, coverPath, manualPagePaths: [], createdAt: now, updatedAt: now };
+    const product: ProductRecord = { id: randomUUID(), name, coverPath, manualPagePaths: [], manualPageHints: [], createdAt: now, updatedAt: now };
     this.products.set(product.id, product);
     return product;
   }
@@ -23,9 +23,10 @@ export class ProductsRepository {
     return product;
   }
 
-  addManualPages(id: string, paths: string[]): ProductRecord {
+  addManualPages(id: string, paths: string[], hints: ManualPageCaptureHint[]): ProductRecord {
     const product = this.get(id);
     product.manualPagePaths.push(...paths);
+    product.manualPageHints.push(...hints);
     product.updatedAt = new Date().toISOString();
     return product;
   }
@@ -45,6 +46,7 @@ export class ProductsRepository {
   clearManualPaths(id: string): void {
     const product = this.get(id);
     product.manualPagePaths = [];
+    product.manualPageHints = [];
     product.updatedAt = new Date().toISOString();
   }
 
@@ -52,6 +54,7 @@ export class ProductsRepository {
     const product = this.products.get(id);
     if (product) {
       product.manualPagePaths = [];
+      product.manualPageHints = [];
       product.updatedAt = new Date().toISOString();
     }
   }

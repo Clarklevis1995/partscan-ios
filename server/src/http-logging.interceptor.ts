@@ -18,13 +18,14 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     const response = context.switchToHttp().getResponse<Response>();
     const requestId = request.header('x-request-id') ?? randomUUID().slice(0, 8);
     const startedAt = Date.now();
+    const silentPoll = request.method === 'GET' && /^\/v1\/analysis\/[0-9a-f-]{36}$/i.test(request.path);
 
     response.setHeader('x-request-id', requestId);
-    this.logger.log(`[${requestId}] --> ${request.method} ${request.originalUrl}`);
+    if (!silentPoll) this.logger.log(`[${requestId}] --> ${request.method} ${request.originalUrl}`);
 
     return next.handle().pipe(
       tap(() => {
-        this.logger.log(
+        if (!silentPoll) this.logger.log(
           `[${requestId}] <-- ${request.method} ${request.originalUrl} ${response.statusCode} ${Date.now() - startedAt}ms`,
         );
       }),

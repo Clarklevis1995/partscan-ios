@@ -28,8 +28,8 @@ export class ProductsController {
 
   @Post(':id/manual-pages')
   @UseInterceptors(FilesInterceptor('pages', 80, { limits: imageLimits }))
-  addPages(@Param('id') id: string, @UploadedFiles() files: Express.Multer.File[]) {
-    return this.products.addPages(id, files ?? []);
+  addPages(@Param('id') id: string, @UploadedFiles() files: Express.Multer.File[], @Body('captureHints') captureHints?: string) {
+    return this.products.addPages(id, files ?? [], captureHints);
   }
 
   @Delete(':id/manual-cache')

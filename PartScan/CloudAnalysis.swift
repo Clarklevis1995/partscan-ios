@@ -38,6 +38,7 @@ struct RemoteAnalysis: Decodable {
     let model: String
     let useOcr: Bool?
     let status: String
+    let stage: String?
     let progress: Int
     let message: String
     let error: String?
@@ -55,6 +56,10 @@ struct RemotePart: Decodable { let number: String; let name: String?; let quanti
 
 struct OCRBoundingBox: Codable, Sendable { let x: Double; let y: Double; let width: Double; let height: Double }
 struct OCRHint: Codable, Sendable { let page: Int; let text: String; let confidence: Double; let boundingBox: OCRBoundingBox }
+enum ManualPageCaptureHint: String, Codable, Sendable {
+    case plateCatalog = "plate_catalog"
+    case assemblySteps = "assembly_steps"
+}
 private struct StartAnalysisRequest: Encodable {
     let model: String
     let useOcr: Bool
@@ -109,11 +114,14 @@ struct PartScanAPI {
 
     func models() async throws -> [RemoteModel] { try await send(path: "analysis/models", response: [RemoteModel].self) }
 
-    func uploadManualPages(productID: String, pages: [Data]) async throws -> RemoteProduct {
+    func uploadManualPages(productID: String, pages: [(data: Data, hint: ManualPageCaptureHint)]) async throws -> RemoteProduct {
         let body = MultipartFormData()
         for (index, page) in pages.enumerated() {
-            body.addFile(page, named: "pages", filename: "page-\(index + 1).jpg", mimeType: "image/jpeg")
+            body.addFile(page.data, named: "pages", filename: "page-\(index + 1).jpg", mimeType: "image/jpeg")
         }
+        let hints = pages.map(\.hint.rawValue)
+        let encodedHints = try JSONEncoder().encode(hints)
+        body.addText(String(decoding: encodedHints, as: UTF8.self), named: "captureHints")
         return try await sendMultipart(path: "products/\(productID)/manual-pages", body: body, response: RemoteProduct.self)
     }
 
@@ -170,8 +178,9 @@ struct PartScanAPI {
         let startedAt = Date()
         let method = request.httpMethod ?? "GET"
         let path = request.url?.path ?? "unknown"
+        let isAnalysisPoll = method == "GET" && path.range(of: #"/analysis/[0-9a-f-]{36}$"#, options: .regularExpression) != nil
         let requestBytes = request.httpBody?.count ?? 0
-        partScanLog("[API] -> \(method) \(path), body \(requestBytes / 1_024) KB")
+        if !isAnalysisPoll { partScanLog("[API] -> \(method) \(path), body \(requestBytes / 1_024) KB") }
         let data: Data
         let response: URLResponse
         do {
@@ -181,7 +190,7 @@ struct PartScanAPI {
             throw error
         }
         guard let http = response as? HTTPURLResponse else { throw PartScanAPIError.invalidResponse }
-        partScanLog("[API] <- \(method) \(path), HTTP \(http.statusCode), response \(data.count / 1_024) KB, \(partScanMilliseconds(since: startedAt))")
+        if !isAnalysisPoll { partScanLog("[API] <- \(method) \(path), HTTP \(http.statusCode), response \(data.count / 1_024) KB, \(partScanMilliseconds(since: startedAt))") }
         guard 200..<300 ~= http.statusCode else {
             let message = (try? JSONDecoder().decode(APIErrorBody.self, from: data).message) ?? "服务器请求失败（\(http.statusCode)）"
             throw PartScanAPIError.server(message)
@@ -216,14 +225,14 @@ final class ManualImageCache: @unchecked Sendable {
         directory = support.appendingPathComponent("PartScan/ManualCaptureCache", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
-    func storeJPEG(_ data: Data, candidates: [OCRHint]) {
+    func storeJPEG(_ data: Data, candidates: [OCRHint], captureHint: ManualPageCaptureHint) {
         let url = directory.appendingPathComponent("page-\(UUID().uuidString).jpg")
         let startedAt = Date()
         guard (try? data.write(to: url, options: .atomic)) != nil else {
             partScanLog("[缓存] 说明书页面写入失败")
             return
         }
-        lock.lock(); capturedPages.append(CapturedManualPage(url: url, candidates: candidates)); lock.unlock()
+        lock.lock(); capturedPages.append(CapturedManualPage(url: url, candidates: candidates, captureHint: captureHint)); lock.unlock()
         partScanLog("[缓存] 页面已写入 \(data.count / 1_024) KB，\(partScanMilliseconds(since: startedAt))")
     }
     func pageURLs() -> [URL] { (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil))?.sorted { $0.lastPathComponent < $1.lastPathComponent } ?? [] }
@@ -237,4 +246,4 @@ final class ManualImageCache: @unchecked Sendable {
     }
 }
 
-struct CapturedManualPage: Sendable { let url: URL; let candidates: [OCRHint] }
+struct CapturedManualPage: Sendable { let url: URL; let candidates: [OCRHint]; let captureHint: ManualPageCaptureHint }

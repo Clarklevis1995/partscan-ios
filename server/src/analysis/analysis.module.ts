@@ -8,10 +8,12 @@ import { QwenOcrProvider } from './qwen-ocr.provider';
 import { OcrTestController } from './ocr-test.controller';
 import { TencentOcrProvider } from './tencent-ocr.provider';
 import { OpenAIProvider } from './openai.provider';
+import { ControlledAnalysisAgentService } from './controlled-analysis-agent.service';
+import { ResultValidatorService } from './result-validator.service';
 
 @Module({
   imports: [ProductsModule],
   controllers: [AnalysisController, OcrTestController],
-  providers: [AnalysisRepository, AnalysisService, QwenOcrProvider, TencentOcrProvider, QwenProvider, OpenAIProvider],
+  providers: [AnalysisRepository, AnalysisService, QwenOcrProvider, TencentOcrProvider, QwenProvider, OpenAIProvider, ResultValidatorService, ControlledAnalysisAgentService],
 })
 export class AnalysisModule {}

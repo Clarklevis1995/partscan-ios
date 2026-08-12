@@ -13,7 +13,7 @@ export function indexBatchSections(batches: PartsList[]): IndexedSection[] {
 export function fallbackSectionGroups(indexed: IndexedSection[]): SectionGroup[] {
   const groups = new Map<string, SectionGroup>();
   for (const item of indexed) {
-    const key = item.section.name.trim().toLocaleLowerCase() || item.id;
+    const key = item.section.unitId?.trim() || item.section.name.trim().toLocaleLowerCase() || item.id;
     const group = groups.get(key) ?? { name: item.section.name || '未分类部位', sectionIds: [] };
     group.sectionIds.push(item.id);
     groups.set(key, group);
@@ -28,7 +28,9 @@ export function mergeBatchPartsLists(batches: PartsList[], proposedGroups: Secti
   const groups: SectionGroup[] = [];
 
   for (const proposed of proposedGroups) {
-    const sectionIds = [...new Set(proposed.sectionIds)].filter((id) => byId.has(id) && !assigned.has(id));
+    const candidateIds = [...new Set(proposed.sectionIds)].filter((id) => byId.has(id) && !assigned.has(id));
+    const firstUnitId = candidateIds.map((id) => byId.get(id)?.unitId).find((id) => id);
+    const sectionIds = firstUnitId ? candidateIds.filter((id) => byId.get(id)?.unitId === firstUnitId) : candidateIds;
     if (!sectionIds.length) continue;
     sectionIds.forEach((id) => assigned.add(id));
     groups.push({ name: proposed.name.trim() || byId.get(sectionIds[0])!.name, sectionIds });
@@ -69,7 +71,9 @@ function mergeSections(name: string, sections: AssemblySection[]): AssemblySecti
     }
   }
   return {
+    ...(sections[0].unitId ? { unitId: sections[0].unitId } : {}),
     name,
+    ...(sections.some((section) => section.multiplier) ? { multiplier: Math.max(...sections.map((section) => section.multiplier ?? 1)) } : {}),
     ...(sourcePages.length ? { sourcePages } : {}),
     plates: [...plates.entries()].map(([code, parts]) => ({ code, parts: [...parts.values()] })),
   };

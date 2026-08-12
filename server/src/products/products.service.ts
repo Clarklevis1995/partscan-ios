@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { ProductRecord } from '../domain';
+import { ManualPageCaptureHint, ProductRecord } from '../domain';
 import { ProductsRepository } from './products.repository';
 import { StorageService } from './storage.service';
 
@@ -23,15 +23,16 @@ export class ProductsService {
     return path;
   }
 
-  async addPages(id: string, files: Express.Multer.File[]) {
+  async addPages(id: string, files: Express.Multer.File[], rawHints?: string) {
     if (!files.length) throw new BadRequestException('At least one manual page is required');
     const product = this.repository.get(id);
     const maximum = Number(process.env.MAX_MANUAL_PAGES ?? 80);
     if (product.manualPagePaths.length + files.length > maximum) throw new BadRequestException(`A manual can contain at most ${maximum} cached pages`);
     const paths = await this.storage.saveManualPages(id, files);
+    const hints = this.parseCaptureHints(rawHints, files.length);
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-    this.logger.log(`说明书已上传 productId=${id} pages=${files.length} bytes=${totalBytes}`);
-    return this.publicProduct(this.repository.addManualPages(id, paths));
+    this.logger.log(`说明书已上传 productId=${id} pages=${files.length} bytes=${totalBytes} hints=${JSON.stringify(hints)}`);
+    return this.publicProduct(this.repository.addManualPages(id, paths, hints));
   }
 
   async clearManualCache(id: string) {
@@ -53,5 +54,17 @@ export class ProductsService {
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
     };
+  }
+
+  private parseCaptureHints(raw: string | undefined, count: number): ManualPageCaptureHint[] {
+    if (!raw) return Array(count).fill('unknown') as ManualPageCaptureHint[];
+    try {
+      const values = JSON.parse(raw) as unknown;
+      if (!Array.isArray(values) || values.length !== count) throw new Error('count mismatch');
+      return values.map((value): ManualPageCaptureHint =>
+        value === 'plate_catalog' || value === 'assembly_steps' ? value : 'unknown');
+    } catch {
+      throw new BadRequestException('captureHints must be a JSON array aligned with uploaded pages');
+    }
   }
 }

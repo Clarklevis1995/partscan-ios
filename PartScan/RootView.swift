@@ -84,9 +84,16 @@ struct AnalysisStatusCard: View {
                     Text(project.status.rawValue).font(.headline)
                     Text(project.status == .failed
                          ? (errorMessage ?? "取件表生成失败，请重新扫描后再试")
-                         : "可以离开此页面，完成后会自动生成取件表")
+                         : (project.analysisMessage.isEmpty ? "任务正在后台处理" : project.analysisMessage))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if project.status != .failed {
+                        ProgressView(value: Double(project.analysisProgress), total: 100)
+                            .tint(PremiumPalette.champagne)
+                        Text("\(project.analysisProgress)%")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 Text(project.status == .failed ? "需要处理" : "后台运行")

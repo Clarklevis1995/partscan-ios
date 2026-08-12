@@ -1,13 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AnalysisModel, AnalysisOptions, AnalysisRecord, OpenAIModel, QwenModel } from '../domain';
+import { AnalysisModel, AnalysisOptions, AnalysisRecord } from '../domain';
 import { ProductsRepository } from '../products/products.repository';
 import { AnalysisRepository } from './analysis.repository';
 import { reconcileIndependentResults } from './analysis-reconciler';
 import { QwenOcrProvider } from './qwen-ocr.provider';
-import { QwenProvider } from './qwen.provider';
 import { TencentOcrProvider } from './tencent-ocr.provider';
-import { OpenAIProvider } from './openai.provider';
+import { ControlledAnalysisAgentService } from './controlled-analysis-agent.service';
 
 @Injectable()
 export class AnalysisService {
@@ -15,8 +14,7 @@ export class AnalysisService {
   constructor(
     private readonly analyses: AnalysisRepository,
     private readonly products: ProductsRepository,
-    private readonly qwen: QwenProvider,
-    private readonly openai: OpenAIProvider,
+    private readonly agent: ControlledAnalysisAgentService,
     private readonly ocr: QwenOcrProvider,
     private readonly tencentOcr: TencentOcrProvider,
     private readonly config: ConfigService,
@@ -60,25 +58,26 @@ export class AnalysisService {
     const job = this.analyses.get(jobId);
     const startedAt = Date.now();
     try {
-      this.analyses.update(jobId, 'analyzing', 25, job.useOcr ? 'VLM与OCR独立分析中' : 'VLM独立分析中');
+      this.analyses.update(jobId, 'analyzing', 10, '正在准备说明书页面', undefined, 'preparing');
       const product = this.products.get(job.productId);
       this.logger.log(`开始分析 analysisId=${jobId} productId=${job.productId} pages=${product.manualPagePaths.length} model=${job.model} useOcr=${job.useOcr} options=${JSON.stringify(job.options)}`);
+      this.logger.log(`节点完成 stage=preparing paths=${product.manualPagePaths.length} hints=${JSON.stringify(product.manualPageHints)}`);
       const ocrProvider = this.config.get('OCR_PROVIDER', 'qwen') === 'tencent' ? this.tencentOcr : this.ocr;
-      const vlmPromise = this.isOpenAIModel(job.model)
-        ? this.openai.analyze(product.manualPagePaths, job.model, job.options)
-        : this.qwen.analyze(product.manualPagePaths, job.model as QwenModel, job.options);
-      const [vlmResult, ocrResult] = await Promise.all([
-        vlmPromise,
-        job.useOcr ? ocrProvider.recognizeStoredPages(product.manualPagePaths) : Promise.resolve([]),
-      ]);
+      const agentResult = await this.agent.run(product.manualPagePaths, product.manualPageHints, job.model, job.options, (progress, message, stage) => {
+        this.analyses.update(jobId, 'analyzing', progress, message, undefined, stage);
+      });
+      const vlmResult = agentResult.partsList;
+      this.analyses.update(jobId, 'analyzing', 86, job.useOcr ? '正在对照 OCR 独立证据' : '正在合并分析结果', undefined, 'reconciling');
+      const ocrResult = job.useOcr ? await ocrProvider.recognizeStoredPages(product.manualPagePaths) : [];
       const result = job.useOcr ? reconcileIndependentResults(vlmResult, ocrResult) : vlmResult;
       if (job.useOcr) {
         const ocrLabels = ocrResult.reduce((sum, page) => sum + page.labels.length, 0);
         this.logger.log(`独立结果协调完成 analysisId=${jobId} ocrLabels=${ocrLabels} addedReviewItems=${result.uncertainItems.length - vlmResult.uncertainItems.length}`);
       }
-      this.analyses.update(jobId, 'generating', 85, '取件表生成中');
+      this.logger.log(`节点完成 stage=reconciling ocrPages=${ocrResult.length} resultUncertain=${result.uncertainItems.length}`);
+      this.analyses.update(jobId, 'generating', 94, '正在生成最终取件表', undefined, 'generating');
       this.products.setPartsList(job.productId, result);
-      this.analyses.update(jobId, 'completed', 100, '取件表已生成');
+      this.analyses.update(jobId, 'completed', 100, '取件表已生成', undefined, 'completed');
       const plates = result.sections.reduce((sum, section) => sum + section.plates.length, 0);
       const parts = result.sections.reduce(
         (sum, section) => sum + section.plates.reduce((plateSum, plate) => plateSum + plate.parts.length, 0),
@@ -87,12 +86,8 @@ export class AnalysisService {
       this.logger.log(`分析完成 analysisId=${jobId} durationMs=${Date.now() - startedAt} sections=${result.sections.length} plates=${plates} parts=${parts} uncertain=${result.uncertainItems.length} manualCacheRetained=true`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown analysis error';
-      this.analyses.update(jobId, 'failed', 100, '分析失败，已保留上传图片以便重试', message);
+      this.analyses.update(jobId, 'failed', 100, '分析失败，已保留上传图片以便重试', message, 'failed');
       this.logger.error(`分析失败 analysisId=${jobId} durationMs=${Date.now() - startedAt}: ${message}`, error instanceof Error ? error.stack : undefined);
     }
-  }
-
-  private isOpenAIModel(model: AnalysisModel): model is OpenAIModel {
-    return model.startsWith('gpt-');
   }
 }

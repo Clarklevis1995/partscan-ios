@@ -38,6 +38,8 @@ struct ScanProject: Identifiable, Hashable {
     var sections: [AssemblySection]
     let coverData: Data?
     var uncertainItems: [RemoteUncertainItem]
+    var analysisProgress: Int = 0
+    var analysisMessage: String = ""
     var totalParts: Int { sections.reduce(0) { $0 + $1.count } }
 }
 
@@ -184,15 +186,15 @@ final class PartsStore: ObservableObject {
                 partScanLog("[分析] 已进入后台流程：准备读取 \(pages.count) 页说明书（总耗时 \(partScanMilliseconds(since: startedAt))）")
                 // Disk I/O and cache cleanup must not run on MainActor: several high
                 // resolution pages otherwise freeze the transition away from ScanView.
-                let imageData = try await Task.detached(priority: .userInitiated) { () throws -> [Data] in
+                let imageData = try await Task.detached(priority: .userInitiated) { () throws -> [(data: Data, hint: ManualPageCaptureHint)] in
                     let readingStartedAt = Date()
-                    var result: [Data] = []
+                    var result: [(data: Data, hint: ManualPageCaptureHint)] = []
                     result.reserveCapacity(pages.count)
                     for (index, page) in pages.enumerated() {
                         let pageStartedAt = Date()
                         let data = try Data(contentsOf: page.url)
                         partScanLog("[图片] 读取待上传第 \(index + 1) 页：\(data.count / 1_024) KB，\(partScanMilliseconds(since: pageStartedAt))")
-                        result.append(data)
+                        result.append((data: data, hint: page.captureHint))
                     }
                     ManualImageCache.shared.clear()
                     partScanLog("[图片] 全部页面已读入内存并清理缓存，\(partScanMilliseconds(since: readingStartedAt))")
@@ -236,7 +238,7 @@ final class PartsStore: ObservableObject {
     private func pollAnalysis(job: RemoteAnalysis, productID: String) async throws {
         var current = job
         while true {
-            print("[PartScan] 分析状态：\(current.status)，进度 \(current.progress)%：\(current.message)")
+            updateAnalysisProgress(current.progress, message: current.message)
             switch current.status {
             case "queued", "analyzing": updateProjectStatus(.analyzing)
             case "generating": updateProjectStatus(.generating)
@@ -262,6 +264,14 @@ final class PartsStore: ObservableObject {
         project.status = status
         if let sections { project.sections = sections }
         if let uncertainItems { project.uncertainItems = uncertainItems }
+        activeProject = project
+        projects[index] = project
+    }
+
+    private func updateAnalysisProgress(_ progress: Int, message: String) {
+        guard var project = activeProject, let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        project.analysisProgress = min(100, max(0, progress))
+        project.analysisMessage = message
         activeProject = project
         projects[index] = project
     }
